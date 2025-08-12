@@ -10,26 +10,22 @@ RUN \
   apt-get install -y --no-install-recommends git && \
   rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
-# Clone the repository (replace with your repo URL & branch if needed)
+# Clone the repository
 RUN git clone --depth=1 https://github.com/ViewTube/viewtube.git .
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-
-COPY server/package.json ./server/
-COPY shared/package.json ./shared/
-COPY client/package.json ./client/
-COPY client/scripts ./client/scripts
-
+# Install pnpm
 RUN npm install -g pnpm@10.12
 
+# Install all dependencies
 RUN pnpm install --frozen-lockfile
 
-COPY . .
-
+# Build the project
 RUN pnpm run build
 
+# Remove dev dependencies
 RUN rm -rf node_modules client/node_modules server/node_modules shared/node_modules "$(pnpm store path)"
 
+# Install only production deps for server & client
 RUN CI=true pnpm --filter=./server --filter=./client install --frozen-lockfile --prod
 
 
@@ -38,14 +34,17 @@ WORKDIR /home/app
 
 ENV NODE_ENV=production
 
+# Copy package.json files for metadata
 COPY --from=build /home/build/package.json ./
 COPY --from=build /home/build/client/package.json ./client/
 COPY --from=build /home/build/server/package.json ./server/
 COPY --from=build /home/build/shared/package.json ./shared/
 
+# Copy production node_modules
 COPY --from=build /home/build/node_modules ./node_modules
 COPY --from=build /home/build/server/node_modules ./server/node_modules
 
+# Copy build outputs
 COPY --from=build /home/build/server/dist ./server/dist/
 COPY --from=build /home/build/shared/dist ./shared/dist/
 COPY --from=build /home/build/client/.output ./client/.output/
