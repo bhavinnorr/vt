@@ -18,16 +18,17 @@ FROM node:22
 WORKDIR /app
 
 # Copy only backend dependencies first for caching
-COPY server/package*.json ./server/
-RUN cd server && npm install
+COPY backend/package*.json ./backend/
+RUN cd backend && npm install
 
 # Copy backend code
 COPY server ./server
+COPY backend ./backend
 
 # Copy built frontend into backend's public dir
-COPY --from=frontend-builder /app/dist ./server/public
+COPY --from=frontend-builder /app/dist ./backend/public
 
 EXPOSE 3000
 
-WORKDIR /app/server
+WORKDIR /app/backend
 CMD ["npm", "start"]
