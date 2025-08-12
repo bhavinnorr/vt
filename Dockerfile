@@ -1,34 +1,63 @@
-# Stage 1: Build frontend
-FROM node:22 AS frontend-builder
-WORKDIR /app
+FROM node:22-bookworm AS build
+WORKDIR /home/build
 
-# Copy only package files first for better caching
-COPY package*.json ./
-RUN npm install
+ENV CI=true
 
-# Copy the rest of the source
+# Install git
+RUN \
+  --mount=type=cache,target=/var/cache/apt \
+  apt-get update && \
+  apt-get install -y --no-install-recommends git && \
+  rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
+
+# Clone the repository (replace with your repo URL & branch if needed)
+RUN git clone --depth=1 https://github.com/ViewTube/viewtube.git .
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+COPY server/package.json ./server/
+COPY shared/package.json ./shared/
+COPY client/package.json ./client/
+COPY client/scripts ./client/scripts
+
+RUN npm install -g pnpm@10.12
+
+RUN pnpm install --frozen-lockfile
+
 COPY . .
 
-# Build frontend (default output is in ./dist)
-RUN npm run build
+RUN pnpm run build
 
-# Stage 2: Backend with built frontend
-FROM node:22
+RUN rm -rf node_modules client/node_modules server/node_modules shared/node_modules "$(pnpm store path)"
 
-WORKDIR /app
+RUN CI=true pnpm --filter=./server --filter=./client install --frozen-lockfile --prod
 
-# Copy only backend dependencies first for caching
-COPY backend/package*.json ./backend/
-RUN cd backend && npm install
 
-# Copy backend code
-# COPY server ./server
-COPY backend ./backend
+FROM node:22-bookworm-slim AS runtime
+WORKDIR /home/app
 
-# Copy built frontend into backend's public dir
-COPY --from=frontend-builder /app/dist ./backend/public
+ENV NODE_ENV=production
 
-EXPOSE 3000
+COPY --from=build /home/build/package.json ./
+COPY --from=build /home/build/client/package.json ./client/
+COPY --from=build /home/build/server/package.json ./server/
+COPY --from=build /home/build/shared/package.json ./shared/
 
-WORKDIR /app/backend
-CMD ["npm", "start"]
+COPY --from=build /home/build/node_modules ./node_modules
+COPY --from=build /home/build/server/node_modules ./server/node_modules
+
+COPY --from=build /home/build/server/dist ./server/dist/
+COPY --from=build /home/build/shared/dist ./shared/dist/
+COPY --from=build /home/build/client/.output ./client/.output/
+
+RUN \
+  --mount=type=cache,target=/var/cache/apt \
+  apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
+
+ENV VIEWTUBE_BASE_DIR=/home/app
+HEALTHCHECK --interval=30s --timeout=20s --start-period=60s --retries=5 CMD curl --fail http://localhost:8066/ || exit 1
+EXPOSE 8066
+
+CMD ["node", "/home/app/server/dist/main.js"]
