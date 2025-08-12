@@ -19,6 +19,9 @@ RUN npm install -g pnpm@10.12
 # Install all dependencies
 RUN pnpm install --frozen-lockfile
 
+# Ensure buildMetadata.json exists (fallback for Nuxt build)
+RUN test -f client/buildMetadata.json || echo '{}' > client/buildMetadata.json
+
 # Build the project
 RUN pnpm run build
 
