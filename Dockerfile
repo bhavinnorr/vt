@@ -22,7 +22,7 @@ COPY backend/package*.json ./backend/
 RUN cd backend && npm install
 
 # Copy backend code
-COPY server ./server
+# COPY server ./server
 COPY backend ./backend
 
 # Copy built frontend into backend's public dir
